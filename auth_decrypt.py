@@ -6,6 +6,7 @@ from datetime import datetime
 from Crypto.PublicKey import RSA
 from Crypto.Util.number import bytes_to_long
 from Crypto.Util.number import long_to_bytes
+from binascii import hexlify
 
 def get_args():
 	parser = ArgumentParser()
@@ -42,7 +43,6 @@ def decrypt(pubkey, authfile):
 	header = unpadded[:4]
 	data_len = int.from_bytes(unpadded[5:6], byteorder="big")
 	gzip_lic = unpadded[6:6+data_len]
-
 	return header, gzip_lic
 
 def unpad(padded):
@@ -65,22 +65,47 @@ def decode_license(gzip_lic):
 
 	return license
 
+#b'\x00\x03\x0e\x1d \x12\x96\xeaD ( \x10 \x1b\xe5\xbeR\xc6%\\3U\x8e\x8a\x1c\xb6g\xcb\x06'
+
+def decode_license40(gzip_lic):
+	lic 		= gzip_lic
+	end			= datetime.strptime(str(int.from_bytes(lic[0:4], byteorder="big")), '%y%m%d')
+	watermark	= hexlify(lic[4:8]).decode()
+	version		= lic[8]
+	readlen		= lic[9]
+	key			= hexlify(lic[10:10+readlen]).decode()
+
+	license = {
+		'key'		: key,
+		'end'		: end,
+		'watermark'	: watermark,
+		'version'	: version
+	}
+
+	return license
+
 def print_license(license):
 	print ('=== Cobalt Strike auth file details ===')
-	print('License key:\t{0}'.format(license['key']))
+	print('Key:\t\t{0}'.format(license['key']))
 	print('End date:\t{0}'.format(license['end'].strftime('%b %d %Y')))
 	print('Watermark:\t{0}'.format(license['watermark']))
-	print('Issued at:\t{0}'.format(license['issued'].strftime('%b %d %Y %H:%M:%S')))
+	if license['version']:
+		print('Version:\t{0}'.format(license['version']))
+	else:
+		print('Issued at:\t{0}'.format(license['issued'].strftime('%b %d %Y %H:%M:%S')))
 
 def main():
 	args = get_args()
 	header, gzip_lic = decrypt(args.pubkey, args.authfile)
 
-	if header != b'\xca\xfe\xc0\xbb':
+	if header != b'\xca\xfe\xc0\xbb' and header != b'\xca\xfe\xc0\xd3':
 		print('Invalid header!')
 		exit(1)
 
-	license = decode_license(gzip_lic)
+	if header == b'\xca\xfe\xc0\xd3':
+		license = decode_license40(gzip_lic)
+	else:
+		license = decode_license(gzip_lic)
 	print_license(license)
 
 if __name__ == '__main__':
